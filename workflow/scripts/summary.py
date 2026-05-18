@@ -178,14 +178,38 @@ def get_capacity_base(n: pypsa.Network) -> pd.DataFrame:
     for c in n.iterate_components(n.one_port_components | n.branch_components):
         if c.name in ("Generator", "StorageUnit"):
             totals.append((c.df.p_nom).groupby(by=[c.df.bus, c.df.carrier]).sum())
+        elif c.name == "Store":
+            totals.append((c.df.e_nom).groupby(by=[c.df.bus, c.df.carrier]).sum())
         elif c.name == "Link":
-            (
-                totals.append(
-                    (c.df.p_nom).groupby(by=[c.df.bus0, c.df.carrier]).sum().rename_axis(index={"bus0": "bus"}),
-                ),
+            # Use bus1 for Electrolysis and bus0 for Fuel Cell
+            mask_electrolysis = c.df.carrier == "H2 electrolysis"
+            mask_fuel_cell = c.df.carrier == "H2 fuel cell"
+            mask_others = ~(mask_electrolysis | mask_fuel_cell)
+
+            # Group by bus0 for electrolysis
+            totals.append(
+                c.df.loc[mask_electrolysis, ["bus0", "carrier", "p_nom"]]
+                .groupby(by=["bus0", "carrier"])["p_nom"].sum()
+                .rename_axis(index={"bus0": "bus"})
+            )
+
+            # Group by bus1 for fuel cells
+            totals.append(
+                c.df.loc[mask_fuel_cell, ["bus1", "carrier", "p_nom"]]
+                .groupby(by=["bus1", "carrier"])["p_nom"].sum()
+                .rename_axis(index={"bus1": "bus"})
+            )
+
+            # Group by both bus0 and bus1 for other links
+            totals.append(
+                c.df.loc[mask_others, ["bus0", "carrier", "p_nom"]]
+                .groupby(by=["bus0", "carrier"])["p_nom"].sum()
+                .rename_axis(index={"bus0": "bus"})
             )
             totals.append(
-                (c.df.p_nom).groupby(by=[c.df.bus1, c.df.carrier]).sum().rename_axis(index={"bus1": "bus"}),
+                c.df.loc[mask_others, ["bus1", "carrier", "p_nom"]]
+                .groupby(by=["bus1", "carrier"])["p_nom"].sum()
+                .rename_axis(index={"bus1": "bus"})
             )
     return pd.concat(totals)
 
@@ -203,40 +227,84 @@ def get_capacity_brownfield(
 
     def _technical_retirement(c: pypsa.components.Component) -> pd.DataFrame:
         if c.name == "Link":
+            mask_electrolysis = c.df.carrier == "H2 electrolysis"
+            mask_fuel_cell = c.df.carrier == "H2 fuel cell"
+            mask_others = ~(mask_electrolysis | mask_fuel_cell)
+
             return pd.concat(
                 [
-                    (c.df.p_nom_opt).groupby(by=[c.df.bus0, c.df.carrier]).sum().rename_axis(index={"bus0": "bus"}),
-                    (c.df.p_nom_opt).groupby(by=[c.df.bus1, c.df.carrier]).sum().rename_axis(index={"bus1": "bus"}),
+                    # For electrolysis, use bus0
+                    (c.df.loc[mask_electrolysis, ["bus0", "carrier", "p_nom_opt"]]
+                     .groupby(by=["bus0", "carrier"])["p_nom_opt"].sum()
+                     .rename_axis(index={"bus0": "bus"})),
+
+                    # For fuel cells, use bus1
+                    (c.df.loc[mask_fuel_cell, ["bus1", "carrier", "p_nom_opt"]]
+                     .groupby(by=["bus1", "carrier"])["p_nom_opt"].sum()
+                     .rename_axis(index={"bus1": "bus"})),
+
+                    # For all other links, use both bus0 and bus1
+                    (c.df.loc[mask_others, ["bus0", "carrier", "p_nom_opt"]]
+                     .groupby(by=["bus0", "carrier"])["p_nom_opt"].sum()
+                     .rename_axis(index={"bus0": "bus"})),
+                    
+                    (c.df.loc[mask_others, ["bus1", "carrier", "p_nom_opt"]]
+                     .groupby(by=["bus1", "carrier"])["p_nom_opt"].sum()
+                     .rename_axis(index={"bus1": "bus"})),
                 ],
             )
+        elif c.name == "Store":
+            return (c.df.e_nom_opt).groupby(by=[c.df.bus, c.df.carrier]).sum()
         else:
             return (c.df.p_nom_opt).groupby(by=[c.df.bus, c.df.carrier]).sum()
 
-    def _economic_retirement(c: str) -> pd.DataFrame:
+    def _economic_retirement(c: pypsa.components.Component) -> pd.DataFrame:
         if c.name == "Link":
+            mask_electrolysis = c.df.carrier == "H2 electrolysis"
+            mask_fuel_cell = c.df.carrier == "H2 fuel cell"
+            mask_others = ~(mask_electrolysis | mask_fuel_cell)
+
             return pd.concat(
                 [
-                    (c.df.p_nom_opt).groupby(by=[c.df.bus0, c.df.carrier]).sum().rename_axis(index={"bus0": "bus"}),
-                    (c.df.p_nom_opt).groupby(by=[c.df.bus1, c.df.carrier]).sum().rename_axis(index={"bus1": "bus"}),
+                    # For electrolysis, use bus0
+                    (c.df.loc[mask_electrolysis, ["bus0", "carrier", "p_nom_opt"]]
+                     .groupby(by=["bus0", "carrier"])["p_nom_opt"].sum()
+                     .rename_axis(index={"bus0": "bus"})),
+
+                    # For fuel cells, use bus1
+                    (c.df.loc[mask_fuel_cell, ["bus1", "carrier", "p_nom_opt"]]
+                     .groupby(by=["bus1", "carrier"])["p_nom_opt"].sum()
+                     .rename_axis(index={"bus1": "bus"})),
+
+                    # For all other links, use both bus0 and bus1
+                    (c.df.loc[mask_others, ["bus0", "carrier", "p_nom_opt"]]
+                     .groupby(by=["bus0", "carrier"])["p_nom_opt"].sum()
+                     .rename_axis(index={"bus0": "bus"})),
+                    
+                    (c.df.loc[mask_others, ["bus1", "carrier", "p_nom_opt"]]
+                     .groupby(by=["bus1", "carrier"])["p_nom_opt"].sum()
+                     .rename_axis(index={"bus1": "bus"})),
                 ],
             )
+        elif c.name == "Store":
+            return (c.df.e_nom_opt).groupby(by=[c.df.bus, c.df.carrier]).sum()
         else:
             return (c.df.p_nom_opt).groupby(by=[c.df.bus, c.df.carrier]).sum()
 
     totals = []
     if retirement_method == "technical":
         for c in n.iterate_components(n.one_port_components | n.branch_components):
-            if c.name in ("Generator", "StorageUnit", "Link"):
+            if c.name in ("Generator", "StorageUnit", "Store", "Link"):
                 totals.append(_technical_retirement(c))
         return pd.concat(totals)
     elif retirement_method == "economic":
         for c in n.iterate_components(n.one_port_components | n.branch_components):
-            if c.name in ("Generator", "StorageUnit", "Link"):
+            if c.name in ("Generator", "StorageUnit", "Store", "Link"):
                 totals.append(_economic_retirement(c))
         return pd.concat(totals)
     else:
         logger.error(
-            f"Retirement method must be one of 'technical' or 'economic'. Recieved {retirement_method}.",
+            f"Retirement method must be one of 'technical' or 'economic'. Received {retirement_method}.",
         )
         raise NotImplementedError
 

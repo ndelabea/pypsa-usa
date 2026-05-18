@@ -181,62 +181,185 @@ def attach_phs_storageunits(n: pypsa.Network, elec_opts, costs: pd.DataFrame):
             cyclic_state_of_charge=True,
         )
 
-
 def attach_stores(n, costs, elec_opts, investment_year):
-    carriers = elec_opts["extendable_carriers"]["Store"]
+    """
+    Attach hydrogen infrastructure to the network.
 
-    add_missing_carriers(n, carriers)
-    add_co2_emissions(n, costs, carriers)
+    - H2 buses are created ONCE (year-invariant)
+    - Stores, electrolysis, and fuel cells are added PER investment year
+    """
 
-    buses_i = n.buses.index
-    bus_sub_dict = {k: n.buses[k].values for k in ["x", "y", "country"]}
+    # -----------------------------
+    # 1. Carrier handling
+    # -----------------------------
+    store_carriers = elec_opts["extendable_carriers"]["Store"]
 
-    if "H2" in carriers:
-        h2_buses_i = n.madd("Bus", buses_i + " H2", carrier="H2", **bus_sub_dict)
+    if "H2" not in store_carriers:
+        return
 
+    add_missing_carriers(n, ["H2"])
+    add_missing_carriers(n, ["H2 electrolysis", "H2 fuel cell"])
+
+    add_co2_emissions(n, costs, ["H2", "H2 electrolysis", "H2 fuel cell"])
+
+    # -----------------------------
+    # 2. Base (electric) buses only
+    # -----------------------------
+    elec_buses = n.buses.index[n.buses.carrier != "H2"]
+
+    # -----------------------------
+    # 3. Bus attributes to copy
+    # -----------------------------
+    bus_sub_dict = {
+        k: n.buses.loc[elec_buses, k].values
+        for k in ["x", "y", "country"]
+        if k in n.buses.columns
+    }
+
+    # -----------------------------
+    # 4. Create H2 buses ONCE
+    # -----------------------------
+    h2_bus_names = elec_buses + " H2"
+    new_h2_buses = h2_bus_names.difference(n.buses.index)
+
+    if len(new_h2_buses) > 0:
         n.madd(
-            "Store",
-            h2_buses_i,
-            bus=h2_buses_i,
+            "Bus",
+            new_h2_buses,
             carrier="H2",
-            e_nom_extendable=True,
-            e_cyclic=True,
-            capital_cost=costs.at["hydrogen storage underground", "capital_cost"],
-            build_year=investment_year,
-            lifetime=costs.at["hydrogen storage underground", "lifetime"],
-            suffix=f" {investment_year}",
+            **bus_sub_dict,
         )
 
-        n.madd(
-            "Link",
-            h2_buses_i + " Electrolysis",
-            bus0=buses_i,
-            bus1=h2_buses_i,
-            carrier="H2 electrolysis",
-            p_nom_extendable=True,
-            efficiency=costs.at["electrolysis", "efficiency"],
-            capital_cost=costs.at["electrolysis", "capital_cost"],
-            marginal_cost=costs.at["electrolysis", "marginal_cost"],
-            build_year=investment_year,
-            lifetime=costs.at["electrolysis", "lifetime"],
-            suffix=str(investment_year),
-        )
+        if "nerc_reg" in n.buses.columns:
+            parent = new_h2_buses.str.replace(" H2", "", regex=False)
+            n.buses.loc[new_h2_buses, "nerc_reg"] = (
+                n.buses.loc[parent, "nerc_reg"].values
+            )
 
-        n.madd(
-            "Link",
-            h2_buses_i + " Fuel Cell",
-            bus0=h2_buses_i,
-            bus1=buses_i,
-            carrier="H2 fuel cell",
-            p_nom_extendable=True,
-            efficiency=costs.at["fuel cell", "efficiency"],
-            # NB: fixed cost is per MWel
-            capital_cost=costs.at["fuel cell", "capital_cost"] * costs.at["fuel cell", "efficiency"],
-            marginal_cost=costs.at["fuel cell", "marginal_cost"],
-            build_year=investment_year,
-            lifetime=costs.at["fuel cell", "lifetime"],
-            suffix=str(investment_year),
-        )
+    h2_buses = h2_bus_names.intersection(n.buses.index)
+    if h2_buses.empty:
+        return
+
+    # -----------------------------
+    # 5. Add H2 storage (per year)
+    # -----------------------------
+    n.madd(
+        "Store",
+        h2_buses,
+        suffix=f" {investment_year}",
+        bus=h2_buses,
+        carrier="H2",
+        e_nom_extendable=True,
+        e_cyclic=True,
+        capital_cost=costs.at["hydrogen_storage_underground", "capital_cost"],
+        build_year=investment_year,
+        lifetime=costs.at["hydrogen_storage_underground", "lifetime"],
+    )
+
+    # -----------------------------
+    # 6. Add electrolysis links (per year)
+    # -----------------------------
+    n.madd(
+        "Link",
+        h2_buses,
+        suffix=f" Electrolysis {investment_year}",
+        bus0=elec_buses,
+        bus1=h2_buses,
+        carrier="H2 electrolysis",
+        p_nom_extendable=True,
+        efficiency=costs.at["electrolysis", "efficiency"],
+        capital_cost=costs.at["electrolysis", "capital_cost"],
+        marginal_cost=costs.at["electrolysis", "marginal_cost"],
+        build_year=investment_year,
+        lifetime=costs.at["electrolysis", "lifetime"],
+    )
+
+    # -----------------------------
+    # 7. Add fuel cell links (per year)
+    # -----------------------------
+    n.madd(
+        "Link",
+        h2_buses,
+        suffix=f" Fuel Cell {investment_year}",
+        bus0=h2_buses,
+        bus1=elec_buses,
+        carrier="H2 fuel cell",
+        p_nom_extendable=True,
+        efficiency=costs.at["fuel_cell", "efficiency"],
+        capital_cost=(
+            costs.at["fuel_cell", "capital_cost"]
+            * costs.at["fuel_cell", "efficiency"]
+        ),
+        marginal_cost=costs.at["fuel_cell", "marginal_cost"],
+        build_year=investment_year,
+        lifetime=costs.at["fuel_cell", "lifetime"],
+    )
+
+# def attach_stores(n, costs, elec_opts, investment_year):
+#     carriers = elec_opts["extendable_carriers"]["Store"]
+
+#     if "H2" in carriers:
+#         carriers.extend(["H2 electrolysis", "H2 fuel cell"])
+
+#     add_missing_carriers(n, carriers)
+#     add_co2_emissions(n, costs, carriers)
+
+#     buses_i = n.buses.index
+#     bus_sub_dict = {k: n.buses[k].values for k in ["x", "y", "country"]}
+
+#     if "H2" in carriers:
+#         # Create H2 buses and assign regions using the base bus
+#         h2_buses_i = n.madd("Bus", buses_i + " H2", carrier="H2", **bus_sub_dict)
+
+#         # Ensure regions are assigned to the new H2 buses
+#         n.buses.loc[h2_buses_i, "nerc_reg"] = n.buses.loc[buses_i, "nerc_reg"].values
+
+#         # Add H2 storage
+#         n.madd(
+#             "Store",
+#             h2_buses_i,
+#             bus=h2_buses_i,
+#             carrier="H2",
+#             e_nom_extendable=True,
+#             e_cyclic=True,
+#             capital_cost=costs.at["hydrogen_storage_underground", "capital_cost"],
+#             build_year=investment_year,
+#             lifetime=costs.at["hydrogen_storage_underground", "lifetime"],
+#             suffix=f" {investment_year}",
+#         )
+
+#         # Add H2 electrolysis links
+#         n.madd(
+#             "Link",
+#             h2_buses_i + " Electrolysis",
+#             bus0=buses_i,
+#             bus1=h2_buses_i,
+#             carrier="H2 electrolysis",
+#             p_nom_extendable=True,
+#             efficiency=costs.at["electrolysis", "efficiency"],
+#             capital_cost=costs.at["electrolysis", "capital_cost"],
+#             marginal_cost=costs.at["electrolysis", "marginal_cost"],
+#             build_year=investment_year,
+#             lifetime=costs.at["electrolysis", "lifetime"],
+#             suffix=str(investment_year),
+#         )
+
+#         # Add H2 fuel cell links
+#         n.madd(
+#             "Link",
+#             h2_buses_i + " Fuel Cell",
+#             bus0=h2_buses_i,
+#             bus1=buses_i,
+#             carrier="H2 fuel cell",
+#             p_nom_extendable=True,
+#             efficiency=costs.at["fuel_cell", "efficiency"],
+#             # Fixed cost is per MWel
+#             capital_cost=costs.at["fuel_cell", "capital_cost"] * costs.at["fuel_cell", "efficiency"],
+#             marginal_cost=costs.at["fuel_cell", "marginal_cost"],
+#             build_year=investment_year,
+#             lifetime=costs.at["fuel_cell", "lifetime"],
+#             suffix=str(investment_year),
+#         )
 
 
 def split_retirement_gens(
@@ -1306,7 +1429,7 @@ if __name__ == "__main__":
         )
         attach_multihorizon_egs(n, costs, costs_dict, egs_gens, investment_year)
         attach_multihorizon_new_generators(n, costs, new_carriers, investment_year)
-        # attach_stores(n, costs, elec_config, investment_year)
+        attach_stores(n, costs, elec_config, investment_year)
 
     if not multi_horizon_gens.empty and not len(n.investment_periods) == 1:
         # Remove duplicate generators from first investment period,

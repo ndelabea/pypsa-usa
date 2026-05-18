@@ -330,6 +330,79 @@ def solve_network(n, config, solving, opts="", **kwargs):
     n.config = config
     n.opts = opts
 
+    # # -------------------------------------------------
+    # # Freeze transmission between p31 and p34
+    # # -------------------------------------------------
+
+    # links_to_freeze = ["p08099||p08101_fwd", "p08099||p08101_rev",
+    #                    "p08009||p08099_fwd", "p08009||p08099_rev",
+    #                    "p35043||p35057_fwd", "p35043||p35057_rev",
+    #                    "p53001||p53025_fwd", "p53001||p53025_rev",
+    #                    "p30003||p30111_fwd", "p30003||p30111_rev",
+    #                    "p30003||p56005_fwd", "p30003||p56005_rev",
+    #                    "p08015||p08043_fwd", "p08015||p08043_rev",
+    #                    "p56001||p56007_fwd", "p56001||p56007_rev",
+    #                    "p08081||p56007_fwd", "p08081||p56007_rev",
+    #                    "p08087||p08121_fwd", "p08087||p08121_rev"]
+
+    # for link in links_to_freeze:
+    #     if link in n.links.index:
+    #         # Fix capacity at current value
+    #         n.links.loc[link, "p_nom_extendable"] = False
+
+    #         # Ensure no accidental expansion bounds remain active
+    #         if "p_nom_max" in n.links.columns:
+    #             n.links.loc[link, "p_nom_max"] = n.links.loc[link, "p_nom"]
+
+    #         logger.info(
+    #             f"Transmission link {link} frozen at "
+    #             f"{n.links.loc[link, 'p_nom']} MW"
+    #         )
+    #     else:
+    #         logger.warning(f"{link} not found in network.")
+
+    # # -------------------------------------------------
+    # # Allow expansion ONLY on selected transmission links
+    # # -------------------------------------------------
+
+    # links_allowed_to_expand = list(set([
+    #     "p08099||p08101_fwd", "p08099||p08101_rev",
+    #     "p08009||p08099_fwd", "p08009||p08099_rev",
+    #     "p35043||p35057_fwd", "p35043||p35057_rev",
+    #     "p53001||p53025_fwd", "p53001||p53025_rev",
+    #     "p30003||p30111_fwd", "p30003||p30111_rev",
+    #     "p30003||p56005_fwd", "p30003||p56005_rev",
+    #     "p08015||p08043_fwd", "p08015||p08043_rev",
+    #     "p56001||p56007_fwd", "p56001||p56007_rev",
+    #     "p08081||p56007_fwd", "p08081||p56007_rev",
+    #     "p08087||p08121_fwd", "p08087||p08121_rev"
+    # ]))
+
+    # # Select electrical transmission links
+    # transmission_links = n.links.index[
+    #     n.links.carrier.isin(["AC", "DC"])
+    # ]
+
+    # # 1️⃣ Freeze ALL transmission links
+    # n.links.loc[transmission_links, "p_nom_extendable"] = False
+
+    # logger.info(f"Froze {len(transmission_links)} transmission links.")
+
+    # # 2️⃣ Re-enable expansion ONLY on selected ones
+    # for link in links_allowed_to_expand:
+    #     if link in n.links.index:
+    #         n.links.loc[link, "p_nom_extendable"] = True
+
+    #         # IMPORTANT: restore expansion headroom
+    #         if "p_nom_max" in n.links.columns:
+    #             # If model uses a global max, restore to that.
+    #             # Often PyPSA-USA uses a very large upper bound.
+    #             n.links.loc[link, "p_nom_max"] = float("inf")
+
+    #         logger.info(f"Expansion allowed on {link}")
+    #     else:
+    #         logger.warning(f"{link} not found in network.")
+
     match foresight:
         case "perfect":
             run_optimize(n, rolling_horizon, skip_iterations, cf_solving, **kwargs)

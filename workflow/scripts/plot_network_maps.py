@@ -74,7 +74,7 @@ def get_color_palette(n: pypsa.Network) -> pd.Series:
 
     # Loop through the carriers DataFrame
     for index, row in n.carriers.iterrows():
-        if "battery" in index or "PHS" in index:
+        if "battery" in index or "PHS" in index or "H2" in index:
             color = row.color
             additional.update(
                 {
@@ -92,6 +92,13 @@ def get_bus_scale(interconnect: str) -> float:
         return 1e5
     else:
         return 4e4
+
+def get_bus_scale_energy(interconnect: str) -> float:
+    """Scales lines based on interconnect size."""
+    if interconnect != "usa":
+        return 1e6
+    else:
+        return 4e5
 
 
 def get_line_scale(interconnect: str) -> float:
@@ -286,6 +293,91 @@ def plot_capacity_map(
     return fig, ax
 
 
+def plot_energy_capacity_map(
+    n: pypsa.Network,
+    bus_values: pd.DataFrame,
+    line_values: pd.DataFrame,
+    link_values: pd.DataFrame,
+    regions: gpd.GeoDataFrame,
+    bus_scale=1,
+    line_scale=1,
+    title=None,
+    flow=None,
+    line_colors="teal",
+    link_colors="green",
+    line_cmap="viridis",
+    line_norm=None,
+) -> tuple[plt.figure, plt.axes]:
+    """Generic network plotting function for capacity pie charts at each node."""
+    fig, ax = plt.subplots(
+        figsize=(10, 10),
+        subplot_kw={"projection": ccrs.EqualEarth(n.buses.x.mean())},
+    )
+
+    line_width = line_values / line_scale
+    link_width = link_values / line_scale
+
+    with plt.rc_context({"patch.linewidth": 0.1}):
+        n.plot(
+            bus_sizes=bus_values / bus_scale,
+            bus_colors=n.carriers.color,
+            bus_alpha=0.7,
+            line_widths=line_width,
+            link_widths=0 if link_width.empty else link_width,
+            line_colors=line_colors,
+            link_colors=link_colors,
+            ax=ax,
+            margin=0.2,
+            color_geomap=True,
+            flow=flow,
+            line_cmap=line_cmap,
+            line_norm=line_norm,
+        )
+
+    # onshore regions
+    regions.plot(
+        ax=ax,
+        facecolor="whitesmoke",
+        edgecolor="white",
+        aspect="equal",
+        transform=ccrs.PlateCarree(),
+        linewidth=1.2,
+    )
+    ax.set_extent(regions.total_bounds[[0, 2, 1, 3]])
+
+    legend_kwargs = {"loc": "upper left", "frameon": False}
+    bus_sizes = [50000, 10e4, 50e4]  # in MW
+    line_sizes = [2000, 5000]  # in MW
+
+    add_legend_circles(
+        ax,
+        [s / bus_scale for s in bus_sizes],
+        [f"{s / 1000} GWh" for s in bus_sizes],
+        legend_kw={"bbox_to_anchor": (1, 1), **legend_kwargs},
+    )
+    add_legend_lines(
+        ax,
+        [s / line_scale for s in line_sizes],
+        [f"{s / 1000} GW" for s in line_sizes],
+        legend_kw={"bbox_to_anchor": (1, 0.8), **legend_kwargs},
+    )
+    specific_carriers = ["battery", "4hr_battery_storage", "8hr_battery_storage", "100hr_battery_storage", "H2"]
+    filtered_colors = n.carriers.color[n.carriers.index.isin(specific_carriers)].fillna("#000000")
+    filtered_names = n.carriers.nice_name[n.carriers.index.isin(specific_carriers)]
+    add_legend_patches(
+        ax,
+        filtered_colors,
+        filtered_names,
+        legend_kw={"bbox_to_anchor": (1, 0.5), **legend_kwargs, "loc": "center left"},
+    )
+    if not title:
+        ax.set_title("Capacity (MW)", fontsize=TITLE_SIZE, pad=20)
+    else:
+        ax.set_title(title, fontsize=TITLE_SIZE, pad=20)
+    fig.tight_layout()
+
+    return fig, ax
+
 def plot_demand_map(
     n: pypsa.Network,
     regions: gpd.GeoDataFrame,
@@ -380,8 +472,10 @@ def plot_base_capacity_map(
     # get data
 
     bus_values = get_capacity_base(n)
+    carriers.extend(["H2 electrolysis", "H2 fuel cell"])
     bus_values = bus_values[bus_values.index.get_level_values(1).isin(carriers)]
     bus_values = remove_sector_buses(bus_values).groupby(by=["bus", "carrier"]).sum()
+    bus_values = bus_values[~bus_values.index.get_level_values('bus').str.endswith(' H2')]
 
     line_values = n.lines.s_nom
     link_values = n.links[n.links.carrier == "AC"].p_nom.replace(to_replace={pd.NA: 0})
@@ -421,8 +515,11 @@ def plot_opt_capacity_map(
     # capacity.index = capacity.index.droplevel(0)
 
     bus_values = get_capacity_brownfield(n)
+    carriers.extend(["H2 electrolysis", "H2 fuel cell"])
     bus_values = bus_values[bus_values.index.get_level_values("carrier").isin(carriers)]
     bus_values = remove_sector_buses(bus_values).reset_index().groupby(by=["bus", "carrier"]).sum().squeeze()
+    bus_values = bus_values[~bus_values.index.get_level_values('bus').str.endswith(' H2')]
+
     line_values = n.lines.s_nom_opt
     link_values = n.links[n.links.carrier == "AC"].p_nom_opt.replace(
         to_replace={pd.NA: 0},
@@ -460,8 +557,10 @@ def plot_new_capacity_map(
     bus_pnom_opt = get_capacity_brownfield(n)
 
     bus_values = bus_pnom_opt - bus_pnom
+    carriers.extend(["H2 electrolysis", "H2 fuel cell"])
     bus_values = bus_values[(bus_values > 0) & (bus_values.index.get_level_values(1).isin(carriers))]
     bus_values = remove_sector_buses(bus_values).reset_index().groupby(by=["bus", "carrier"]).sum().squeeze()
+    bus_values = bus_values[~bus_values.index.get_level_values('bus').str.endswith(' H2')]
 
     line_snom = n.lines.s_nom
     line_snom_opt = n.lines.s_nom_opt
@@ -490,6 +589,224 @@ def plot_new_capacity_map(
     fig.savefig(save)
     plt.close()
 
+def plot_base_energy_map(
+    n: pypsa.Network,
+    regions: gpd.GeoDataFrame,
+    carriers: list[str],
+    save: str,
+    **wildcards,
+) -> None:
+    """Plots map of base network capacities."""
+    # get data
+
+    bus_values = get_capacity_base(n)
+    battery_carriers = ["battery", "4hr_battery_storage", "8hr_battery_storage", "100hr_battery_storage"]
+
+    # Check if H2 is present in n.stores
+    has_h2 = "H2" in n.stores.carrier.unique()
+
+    all_carriers = battery_carriers + (["H2"] if has_h2 else [])
+    bus_values = bus_values[bus_values.index.get_level_values(1).isin(all_carriers)]
+
+    max_hours = n.storage_units.groupby(["carrier", "bus"])["max_hours"].first().reset_index()
+    max_hours_dict = {(row["bus"], row["carrier"]): row["max_hours"] for _, row in max_hours.iterrows()}
+    for idx in bus_values.index:
+        bus, carrier = idx
+        if carrier in battery_carriers:
+            max_hour = max_hours_dict.get((bus, carrier), 1)
+            bus_values.loc[idx] *= max_hour
+
+    # Handle H2-specific logic only if H2 exists
+    if has_h2:
+        h2_buses = bus_values[bus_values.index.get_level_values("bus").str.endswith(" H2")]
+        non_h2_buses = bus_values[~bus_values.index.get_level_values("bus").str.endswith(" H2")]
+
+        bus_mapping = {bus: bus + " H2" for bus in non_h2_buses.index.get_level_values("bus").unique()}
+        for bus, h2_bus in bus_mapping.items():
+            for carrier in battery_carriers:
+                if (bus, carrier) in non_h2_buses.index:
+                    value = non_h2_buses.loc[(bus, carrier)]
+                    if (h2_bus, carrier) in h2_buses.index:
+                        h2_buses.loc[(h2_bus, carrier)] += value
+                    else:
+                        h2_buses.loc[(h2_bus, carrier)] = value
+        combined_buses = h2_buses
+    else:
+        combined_buses = bus_values
+
+    line_values = n.lines.s_nom
+    link_values = n.links[n.links.carrier == "AC"].p_nom.replace(to_replace={pd.NA: 0})
+
+    # plot data
+
+    title = create_title("Base Network Energy Capacities", **wildcards)
+    interconnect = wildcards.get("interconnect", None)
+    bus_scale = get_bus_scale_energy(interconnect) if interconnect else 1
+    line_scale = get_line_scale(interconnect) if interconnect else 1
+
+    fig, _ = plot_energy_capacity_map(
+        n=n,
+        bus_values=combined_buses,
+        line_values=line_values,
+        link_values=link_values,
+        regions=regions,
+        line_scale=line_scale,
+        bus_scale=bus_scale,
+        title=title,
+    )
+    fig.savefig(save)
+    plt.close()
+
+def plot_opt_energy_map(
+    n: pypsa.Network,
+    regions: gpd.GeoDataFrame,
+    carriers: list[str],
+    save: str,
+    **wildcards,
+) -> None:
+    """Plots map of optimal network capacities."""
+    # get data
+    # capacity = n.statistics()[['Optimal Capacity']]
+    # capacity = capacity[capacity.index.get_level_values(0).isin(['Generator', 'StorageUnit'])]
+    # capacity.index = capacity.index.droplevel(0)
+
+    bus_values = get_capacity_brownfield(n)
+    battery_carriers = ["battery", "4hr_battery_storage", "8hr_battery_storage", "100hr_battery_storage"]
+    has_h2 = "H2" in n.stores.carrier.unique()
+
+    # Only include H2 if present
+    all_carriers = battery_carriers + (["H2"] if has_h2 else [])
+    bus_values = bus_values[bus_values.index.get_level_values(1).isin(all_carriers)]
+
+    # Scale battery storage capacities by max_hours
+    max_hours = n.storage_units.groupby(["carrier", "bus"])["max_hours"].first().reset_index()
+    max_hours_dict = {(row["bus"], row["carrier"]): row["max_hours"] for _, row in max_hours.iterrows()}
+    for idx in bus_values.index:
+        bus, carrier = idx
+        if carrier in battery_carriers:
+            bus_values.loc[idx] *= max_hours_dict.get((bus, carrier), 1)
+
+    if has_h2:
+        h2_buses = bus_values[bus_values.index.get_level_values("bus").str.endswith(" H2")]
+        non_h2_buses = bus_values[
+            ~bus_values.index.get_level_values("bus").str.endswith(" H2")
+        ]
+
+        bus_mapping = {bus: f"{bus} H2" for bus in non_h2_buses.index.get_level_values("bus").unique()}
+
+        for bus, h2_bus in bus_mapping.items():
+            for carrier in battery_carriers:
+                if (bus, carrier) in non_h2_buses.index:
+                    value = non_h2_buses.loc[(bus, carrier)]
+                    if (h2_bus, carrier) in h2_buses.index:
+                        h2_buses.loc[(h2_bus, carrier)] += value
+                    else:
+                        h2_buses.loc[(h2_bus, carrier)] = value
+
+        combined_buses = h2_buses
+    else:
+        combined_buses = bus_values
+
+    line_values = n.lines.s_nom_opt
+    link_values = n.links[n.links.carrier == "AC"].p_nom_opt.replace(
+        to_replace={pd.NA: 0},
+    )
+
+    # plot data
+    title = create_title("Optimal Network Energy Capacities", **wildcards)
+    interconnect = wildcards.get("interconnect", None)
+    bus_scale = get_bus_scale_energy(interconnect) if interconnect else 1
+    line_scale = get_line_scale(interconnect) if interconnect else 1
+
+    fig, _ = plot_energy_capacity_map(
+        n=n,
+        bus_values=combined_buses,
+        line_values=line_values,
+        link_values=link_values,
+        regions=regions,
+        line_scale=line_scale,
+        bus_scale=bus_scale,
+        title=title,
+    )
+    fig.savefig(save)
+    plt.close()
+
+
+def plot_new_energy_map(
+    n: pypsa.Network,
+    regions: gpd.GeoDataFrame,
+    carriers: list[str],
+    save: str,
+    **wildcards,
+) -> None:
+    """Plots map of new capacity."""
+    bus_pnom = get_capacity_base(n)
+    bus_pnom_opt = get_capacity_brownfield(n)
+
+    bus_values = bus_pnom_opt - bus_pnom
+    battery_carriers = ["battery", "4hr_battery_storage", "8hr_battery_storage", "100hr_battery_storage"]
+    
+    has_h2 = "H2" in n.stores.carrier.unique()
+
+    # Include H2 only if present
+    all_carriers = battery_carriers + (["H2"] if has_h2 else [])
+    bus_values = bus_values[bus_values.index.get_level_values(1).isin(all_carriers)]
+
+    # Scale battery values by max_hours
+    max_hours = n.storage_units.groupby(["carrier", "bus"])["max_hours"].first().reset_index()
+    max_hours_dict = {(row["bus"], row["carrier"]): row["max_hours"] for _, row in max_hours.iterrows()}
+    for idx in bus_values.index:
+        bus, carrier = idx
+        if carrier in battery_carriers:
+            bus_values.loc[idx] *= max_hours_dict.get((bus, carrier), 1)
+
+    if has_h2:
+        h2_buses = bus_values[bus_values.index.get_level_values("bus").str.endswith(" H2")]
+        non_h2_buses = bus_values[
+            ~bus_values.index.get_level_values("bus").str.endswith(" H2")
+        ]
+
+        bus_mapping = {bus: f"{bus} H2" for bus in non_h2_buses.index.get_level_values("bus").unique()}
+
+        for bus, h2_bus in bus_mapping.items():
+            for carrier in battery_carriers:
+                if (bus, carrier) in non_h2_buses.index:
+                    value = non_h2_buses.loc[(bus, carrier)]
+                    if (h2_bus, carrier) in h2_buses.index:
+                        h2_buses.loc[(h2_bus, carrier)] += value
+                    else:
+                        h2_buses.loc[(h2_bus, carrier)] = value
+
+        combined_buses = h2_buses
+    else:
+        combined_buses = bus_values
+
+    line_snom = n.lines.s_nom
+    line_snom_opt = n.lines.s_nom_opt
+    line_values = line_snom_opt - line_snom
+
+    link_pnom = n.links[n.links.carrier == "AC"].p_nom
+    link_pnom_opt = n.links[n.links.carrier == "AC"].p_nom_opt
+    link_values = link_pnom_opt - link_pnom
+
+    # plot data
+    title = create_title("New Network Energy Capacities", **wildcards)
+    interconnect = wildcards.get("interconnect", None)
+    bus_scale = get_bus_scale_energy(interconnect) if interconnect else 1
+    line_scale = get_line_scale(interconnect) if interconnect else 1
+
+    fig, _ = plot_energy_capacity_map(
+        n=n,
+        bus_values=combined_buses,
+        line_values=line_values,
+        link_values=link_values.replace(to_replace={pd.NA: 0}),
+        regions=regions,
+        line_scale=line_scale,
+        bus_scale=bus_scale,
+        title=title,
+    )
+    fig.savefig(save)
+    plt.close()
 
 def plot_renewable_potential(
     n: pypsa.Network,
@@ -638,6 +955,27 @@ if __name__ == "__main__":
         carriers,
         **snakemake.wildcards,
         save=snakemake.output["capacity_map_new.pdf"],
+    )
+    plot_base_energy_map(
+        n,
+        onshore_regions,
+        carriers,
+        snakemake.output.energy_map_base,
+        **snakemake.wildcards,
+    )
+    plot_opt_energy_map(
+        n,
+        onshore_regions,
+        carriers,
+        **snakemake.wildcards,
+        save=snakemake.output.energy_map_optimized,
+    )
+    plot_new_energy_map(
+        n,
+        onshore_regions,
+        carriers,
+        **snakemake.wildcards,
+        save=snakemake.output.energy_map_new,
     )
     plot_demand_map(
         n,

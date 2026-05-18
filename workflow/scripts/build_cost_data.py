@@ -321,7 +321,7 @@ if __name__ == "__main__":
         {
             "pypsa-name": "HVAC overhead",
             "parameter": "capex_per_mw_km",
-            "value": 1541,
+            "value": 1541, # 1541 * 1 .3
         },
         {
             "pypsa-name": "HVAC overhead",
@@ -332,7 +332,7 @@ if __name__ == "__main__":
         {
             "pypsa-name": "HVDC overhead",
             "parameter": "capex_per_mw_km",
-            "value": 1026.53,
+            "value": 1026.53, # 1026.53 * 1 .3
         },
         {
             "pypsa-name": "HVDC overhead",
@@ -343,7 +343,7 @@ if __name__ == "__main__":
         {
             "pypsa-name": "HVDC submarine",
             "parameter": "capex_per_mw_km",
-            "value": 504.141,
+            "value": 504.141, # 504.141 * 1 .3
         },
         {
             "pypsa-name": "HVDC submarine",
@@ -354,7 +354,7 @@ if __name__ == "__main__":
         {
             "pypsa-name": "HVDC inverter pair",
             "parameter": "capex_per_kw",
-            "value": 173.730,
+            "value": 173.730, # 173.730 * 1 .3
         },
         {
             "pypsa-name": "HVDC inverter pair",
@@ -488,9 +488,9 @@ if __name__ == "__main__":
             pivot_atb["wacc_real"],
         )
         * pivot_atb["capex_per_mw_km"]
-        * 1
+        * 1     # here for 1.3
         # change to nyears
-    )
+    ) # here for 1.3
 
     # Calculate grid interrconnection costs per MW-KM
     # All land-based resources assume 1 mile of spur line
@@ -521,6 +521,35 @@ if __name__ == "__main__":
     pudl_atb = pudl_atb.reset_index(drop=True)
     pudl_atb["value"] = pudl_atb["value"].round(3)
 
+    # Modify the specific value for "offwind_floating"
+    if tech_year < 2035:
+        value_offwind = 450000
+        value_transmission = 73.342 * 1.3
+        year_horizon_filter = 2030
+    elif 2035 <= tech_year <= 2044:
+        value_offwind = 300000
+        value_transmission = 73.342 * 1.3
+        year_horizon_filter = 2040
+    else:
+        value_offwind = 200000
+        value_transmission = 73.342 * 1.3
+        year_horizon_filter = 2050
+
+    # Modify the specific value for "offwind_floating"
+    pudl_atb.loc[
+        (pudl_atb["pypsa-name"] == "offwind_floating") & 
+        (pudl_atb["parameter"] == "annualized_capex_fom"),
+        "value"
+    ] = value_offwind
+
+    # # Modify the specific value for "transmission"
+    # pudl_atb.loc[
+    #     (pudl_atb["pypsa-name"] == "HVAC overhead") & 
+    #     (pudl_atb["parameter"] == "annualized_capex_per_mw_km"),
+    #     "value"
+    # ] = value_transmission
+
+    # EGS Costs
     egs_costs = pd.read_csv(snakemake.input.egs_costs)
     egs_costs = egs_costs.query("investment_horizon == @tech_year").drop(
         columns="investment_horizon",
@@ -528,6 +557,21 @@ if __name__ == "__main__":
     pudl_atb = pd.concat([pudl_atb, egs_costs], ignore_index=True)
 
     pudl_atb.to_csv(snakemake.output.tech_costs, index=False)
+
+    # Function to pull in extra cost data and filter based on year_horizon
+    def pull_in_extra_cost_data(ldes_cost_data_path, pudl_atb, year_horizon_filter):
+        ldes_cost_data = pd.read_csv(ldes_cost_data_path)
+
+        # Filter data based on year_horizon
+        ldes_cost_data_filtered = ldes_cost_data[ldes_cost_data["year_horizon"] == year_horizon_filter]
+
+        # Append filtered data to pudl_atb
+        updated_pudl_atb = pd.concat([pudl_atb, ldes_cost_data_filtered], ignore_index=True)
+
+        # Save the updated dataframe
+        updated_pudl_atb.to_csv(snakemake.output.tech_costs, index=False)
+
+    pull_in_extra_cost_data(snakemake.input.ldes_costs, pudl_atb, year_horizon_filter) #year_horizon_filter
 
     # sector costs
     sector_costs = get_sector_costs(

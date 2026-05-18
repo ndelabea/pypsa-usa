@@ -1,0 +1,19 @@
+name,planning_horizon,region,carrier,min,max
+reeds_nuclear_no_build,all,OR,"nuclear, SMR",,existing
+reeds_nuclear_no_build,all,CA,"nuclear, SMR",,existing
+reeds_fosw_mandate,2025,CA,offwind_floating,0,
+reeds_fosw_mandate,2026,CA,offwind_floating,0,
+reeds_fosw_mandate,2027,CA,offwind_floating,0,
+reeds_fosw_mandate,2028,CA,offwind_floating,0,
+reeds_fosw_mandate,2029,CA,offwind_floating,0,
+reeds_fosw_mandate,2030,CA,offwind_floating,0,
+reeds_fosw_mandate,2031,CA,offwind_floating,0,
+reeds_fosw_mandate,2032,CA,offwind_floating,0,
+reeds_fosw_mandate,2033,CA,offwind_floating,0,
+reeds_fosw_mandate,2034,CA,offwind_floating,0,
+reeds_fosw_mandate,2035,CA,offwind_floating,0,
+reeds_fosw_mandate,2036,CA,offwind_floating,0,
+reeds_fosw_mandate,2037,CA,offwind_floating,0,
+reeds_fosw_mandate,2038,CA,offwind_floating,0,
+reeds_fosw_mandate,2039,CA,offwind_floating,0,
+reeds_fosw_mandate,2040,CA,offwind_floating,0,
