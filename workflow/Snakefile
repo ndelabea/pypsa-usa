@@ -43,6 +43,12 @@ FIGURES_SYSTEM = [
     "generator_data_panel.pdf",
     "fuel_costs.pdf",
     "region_lmps.pdf",
+    "storage_soc.pdf",
+    "market_price.pdf",
+    "daily_curtailment.pdf",
+    "energy_production_area.pdf",
+    "storage_vs_wind.pdf",
+    # "storage_vs_wind_3.pdf",
 ]
 
 FIGURES_VALIDATE = [

@@ -30,6 +30,13 @@ rule plot_network_maps:
             % fig
             for fig in FIGURES_MAPS
         },
+        
+        energy_map_base=RESULTS
+        + "{interconnect}/figures/s{simpl}_cluster_{clusters}/l{ll}_{opts}_{sector}/maps/energy_map_base.pdf",
+        energy_map_optimized=RESULTS
+        + "{interconnect}/figures/s{simpl}_cluster_{clusters}/l{ll}_{opts}_{sector}/maps/energy_map_optimized.pdf",
+        energy_map_new=RESULTS
+        + "{interconnect}/figures/s{simpl}_cluster_{clusters}/l{ll}_{opts}_{sector}/maps/energy_map_new.pdf",
     log:
         "logs/plot_figures/{interconnect}_{simpl}_{clusters}_l{ll}_{opts}_{sector}.log",
     threads: 1
@@ -95,6 +102,16 @@ rule plot_statistics:
         + "{interconnect}/figures/s{simpl}_cluster_{clusters}/l{ll}_{opts}_{sector}/statistics/buses.csv",
         lines=RESULTS
         + "{interconnect}/figures/s{simpl}_cluster_{clusters}/l{ll}_{opts}_{sector}/statistics/lines.csv",
+                
+        energy_capacity_additions_bar=RESULTS
+        + "{interconnect}/figures/s{simpl}_cluster_{clusters}/l{ll}_{opts}_{sector}/system/energy_capacity_additions_bar.pdf",
+        
+        bar_regional_energy_capacity_additions=RESULTS
+        + "{interconnect}/figures/s{simpl}_cluster_{clusters}/l{ll}_{opts}_{sector}/system/bar_regional_energy_capacity_additions.pdf",
+        
+        bar_regional_energy_production=RESULTS
+        + "{interconnect}/figures/s{simpl}_cluster_{clusters}/l{ll}_{opts}_{sector}/system/bar_regional_energy_production.pdf",
+    
     log:
         "logs/plot_figures/{interconnect}_{simpl}_{clusters}_l{ll}_{opts}_{sector}.log",
     threads: 1
@@ -103,3 +120,5 @@ rule plot_statistics:
         walltime="00:30:00",
     script:
         "../scripts/plot_statistics.py"
+
+

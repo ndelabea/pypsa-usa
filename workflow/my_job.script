@@ -1,0 +1,15 @@
+#!/bin/bash
+
+#SBATCH --job-name=pypsa
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=YOUR_EMAIL_HERE
+
+#SBATCH --time=129:59:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --mem=60GB
+#SBATCH --cpus-per-task=16
+#SBATCH --partition=serc
+#SBATCH -o slurm-%j.out
+
+bash run_slurm.sh

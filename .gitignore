@@ -11,9 +11,6 @@ dconf
 *.dot
 *.tar.gz
 
-# configuration files
-config/
-
 # generated files
 results/
 resources/
